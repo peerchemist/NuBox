@@ -1,0 +1,17 @@
+Standards-Version: 3.9.6
+Source: nubits
+Section: net
+Priority: optional
+Maintainer: Peerchemist <peerchemist@protonmail.ch>
+Homepage: https://nubits.com/
+Build-Depends: debhelper (>= 4.1.16), libssl-dev, libcurl4-openssl-dev, libqt4-dev, libboost-dev, libdb++-dev, libboost-program-options-dev, libboost-filesystem-dev, libboost-system-dev, libboost-thread-dev, libminiupnpc-dev, libqrencode-dev, hardening-includes
+
+Package: nu
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ncf
+Suggests: tor
+Description: Official client for NuBits cryptocurrency.
+ .
+ NuBits is the world's first stable cryptocurrency. 1 NuBit = $1. NuShares represent ownership in the Nu Network.
+ .
+ 

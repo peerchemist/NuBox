@@ -1,0 +1,445 @@
+#!/usr/bin/python2
+# -*- coding: utf-8 -*-
+#
+# Copyright 2016 Peerchemist
+#
+# This file is part of Peerbox project.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see <http://www.gnu.org/licenses/>.
+ 
+__author__ = "Peerchemist"
+__license__ = "GPL"
+__version__ = "0.1"
+
+import os, sys
+import signal
+import sh
+import subprocess
+import argparse
+import json
+import urllib
+import platform
+import collections
+import getpass
+from nubox import nu_node
+from datetime import timedelta
+from datetime import datetime as dt
+
+def system():
+    '''parses system info'''
+
+    def uptime():
+        with open('/proc/uptime', 'r') as f:
+            uptime_seconds = float(f.readline().split()[0])
+            uptime_str = str(timedelta(seconds = uptime_seconds))
+
+        return uptime_str
+
+    def distr():
+        return platform.linux_distribution()[0] + " " + platform.linux_distribution()[1]
+
+    def temp():
+        with open('/sys/class/thermal/thermal_zone0/temp', 'r') as temp:
+            return(float(temp.readline().strip())/1000)
+
+    mm = {
+        'os': distr(),
+        'uptime': uptime(),
+        'avg_load': os.getloadavg()#,
+        #'system_temperature': temp()
+        }
+
+    return mm
+
+def hardware():
+    '''parses hardware info'''
+
+    info = {}
+
+    def platform():
+        with open('/proc/cpuinfo') as cpuinfo:
+            for line in cpuinfo:
+                if line.startswith('Hardware'):
+                    hardware = line.split(':')[1].strip()
+                    if hardware == "BCM2708":
+                        return "Raspberry Pi_1"
+                    if hardware == "BCM2709":
+                        return "Raspberry Pi_2"
+
+    def serial():  
+        with open('/proc/cpuinfo') as cpuinfo:
+            for line in cpuinfo:            
+                if line.startswith('Serial'):
+                    ser = line.split(':')[1].strip()
+                    return ser
+
+    if platform() != None:
+
+        with open('/proc/cmdline', 'r') as cmdline:
+            for i in cmdline.readline().split():
+                if i.startswith('smsc95xx.macaddr'):
+                    info['macc'] = str(i.split('=')[1])
+
+        info["hardware"] = platform()
+        info["serial"] = serial()
+        return info
+
+    else:
+        return {"hardware": "Unknown",
+                "serial": "Unknown",
+                "macc": "Unknown"}
+
+def isRunning():
+    '''checks if ppcoind is running'''
+    try:
+        pid = sh.pidof("nud").stdout.strip()
+    except:
+        return False
+
+    if pid != None:
+        return True
+
+def exchangeRates():
+    '''pull peercoin exchange rates from remote api'''
+
+    def get():
+        api = "https://www.cryptonator.com/api/ticker/"
+
+        return {"usd": json.loads(urllib.urlopen(api + "nsr-usd").read())["ticker"]["price"], 
+                "btc": json.loads(urllib.urlopen(api + "nsr-btc").read())["ticker"]["price"]
+                }
+
+    def handler(s, f):
+        print 'Signal handler called with signal', s
+        raise IOError("Couldn't connect!")
+
+    # Set the signal handler and a 5-second alarm
+    signal.signal(signal.SIGALRM, handler)
+    signal.alarm(5)
+
+    ## the operation that may take a long time/or wait indefinitely, than we expect it to
+    return get()
+
+    signal.alarm(0) # Disable the alarm
+
+def info(public=False):
+    '''acts like just like nudd getinfo but on steroids'''
+
+    info = node.getinfo()
+    report = collections.OrderedDict()
+
+    report["nu_version"] = info["version"]
+    report["os"] = system()["os"]
+    report["hardware"] = hardware()["hardware"]
+    if (public == False and "Raspberry Pi" in hardware()["hardware"]):
+      report["serial"] = hardware()["serial"]
+      report["macc addr"] = hardware()["macc"]
+    report["uptime"] = system()["uptime"]
+    report["average_load"] = system()["avg_load"]
+    
+    if (public == False and nbt == False):
+        report["balance"] = info["balance"]
+        if (int(report["balance"]) != 0 
+            and exchangeRates() != None
+            and info["testnet"] == False):
+          report["value"] = {"BTC": int(float(report["balance"]) * float(exchangeRates()["btc"])),
+                              "USD": int(float(report["balance"]) * float(exchangeRates()["usd"]))}
+        report["stake"] = info["stake"]
+        report["newmint"] = info["newmint"]
+    
+    if public == False:
+        report["ip"] = info["ip"]
+    report["connections"] = info["connections"]
+    report["blocks"] = info["blocks"]
+    report["moneysupply"] = info["moneysupply"]
+    report["pos_difficulty"] = node.getdifficulty()["proof-of-stake"]
+    
+    if info["testnet"] == True:
+        report["testnet"] = True
+
+    report["protocolversion"] = info["protocolversion"]
+    report["walletversion"] = info["walletversion"]
+    report["walletunit"] = info["walletunit"]
+
+    return report
+
+def gauth_set():
+    #gauth = sh.Command("/usr/bin/google-authenticator")
+    #gauth("--force", "-t", "-d", "--rate-limit=3", "--rate-time=120", 
+    #                           "--window-size=4", "--label=Peerbox")
+    subprocess.call(["/usr/bin/google-authenticator", 
+                    "--force", "-t", "-d", "--rate-limit=3", 
+                    "--rate-time=120", "--window-size=4", "--label=Peerbox"])
+    sh.sudo("/usr/lib/pcf/set_gauth", "set")
+    print("Google-authenticator is now enabled.")
+
+def gauth_unset():
+    sh.sudo("/usr/lib/pcf/set_gauth", "unset")
+    print("Google-authenticator is now disabled.")
+
+def mint():
+    passwd = raw_input("Please enter your wallet password: ")
+    print("Unlocking wallet for minting only.")
+    try:
+        node.walletpassphrase(passwd)
+    except:
+        return
+
+def balance():
+    '''prints out wallet balance'''
+    return { 'balance': node.getbalance() }
+
+def addr():
+    '''prints out all Nu addresses associated with this wallet.'''
+    return node.listreceivedbyaddress()
+
+def send(addr, amount, comment=""):
+    '''send Peercoin to some address'''
+    return node.sendtoaddress(str(addr), int(amount), str(comment))
+
+def vote(arg):
+    '''guides user through setting up a vote'''
+
+    def motion():
+        _hash = raw_input("\nMotion hash: ").strip()
+        data = {
+            "motions": [_hash]
+        }
+
+        node.setvote(data)
+
+    def custodian():
+        _addr = raw_input("\nCustodian address: ").strip()
+        _am = raw_input("NuBit amount: ").strip()
+        data = {
+            "custodians": [
+                {"address": _addr,
+                "amount": _am}
+                ]
+        }
+
+        node.setvote(data)
+
+    if arg == None:
+        print("\nTell me what do you want to vote for.")
+        print("[custodian] / [parkrates] / [motions]")
+
+        ans=True
+        while ans:
+            print("""
+            1. Custodian vote
+            2. Parkrates vote
+            3. Motion vote
+            4. Exit.
+            """)
+            ans=raw_input("What do you want to vote for? ")
+            if ans=="1":
+              print("\nCustodian vote.")
+              custodian()
+
+            elif ans=="2":
+              print("\n Park rates vote.")
+              print("Not implemented.")
+
+            elif ans=="3":
+              print("\n Motion vote.")
+              motion()
+
+            elif ans=="4":
+              print("\n Goodbye") 
+              ans = None
+            else:
+               print("\n Not Valid Choice Try again")
+
+    if arg in ["mot", "motion", "motions"]:
+        motion()
+    if arg in ["cust", "custodian", "custodians"]:
+        custodian()
+
+def datafeed():
+    '''guides user thorugh setting up a datafeed'''
+    
+    _feedurl = str(raw_input("\nPaste datafeed url: ").strip())
+    _sig_url = str(raw_input("Paste signature url: ").strip())
+    _sig_addr = str(raw_input("Paste signature address: ").strip())
+    print("What do you want to follow? Enter if [all], coma seperated if more than one: [custodians], [parkrates], [motions]")
+    _parts = raw_input("\n: ")
+
+    if _parts == "":
+        print node.setdatafeed(_feedurl, _sig_url, _sig_addr, parts="")
+    else:
+        print node.setdatafeed(_feedurl, _sig_url, _sig_addr, _parts)
+
+    print(json.dumps(node.getdatafeed(), indent=4))
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Show information on NuBox.')
+    parser.add_argument("-version", help="print NuBox version.", action="store_true")
+    parser.add_argument("-unit", help="switch between NuShares and NuBits", nargs='?', action='append')
+    parser.add_argument("-info", help='''equal to "nud getinfo" with some extras''', action="store_true")
+    parser.add_argument("-balance", help="print balance", action="store_true")
+    parser.add_argument("-public", help="show info with omitted private data", action="store_true")
+    parser.add_argument("-stdout", help="dump data to stdout, use to pipe to some other program", action="store_true")
+    parser.add_argument("-rates", help="current average PPC exchange rates in USD and BTC", action="store_true")
+    parser.add_argument("-start", help="start NuBox", action="store_true")
+    parser.add_argument("-stop", help="stop NuBox", action="store_true")
+    parser.add_argument("-autostart", help="make NuBox autostart at boot time", nargs='?', action='append')
+    parser.add_argument("-tor", help="start NuBox with Tor", action="store_true")
+    parser.add_argument("-onion", help="show .onion address if this node has one", action="store_true")
+    parser.add_argument("-restart", help="restart NuBox", action="store_true")
+    parser.add_argument("-mint", help="unlock wallet for minting.", action="store_true")
+    parser.add_argument("-addr", help="shows all associated addresses.", action="store_true")
+    parser.add_argument("-send", help="send NuShares/NuBits; -send ADDRESS AMOUNT", nargs="*")
+    parser.add_argument("-gauth", help="enable or disable google-authenticator, use with 'set' or 'unset'", nargs='?', action='append')
+    parser.add_argument("-nbt", help="switch to NuBits", action='store_true')
+    parser.add_argument("-motions", help="show active motions", action="store_true")
+    parser.add_argument("-parkrates", help="show parking rates", action="store_true")
+    parser.add_argument("-liquidity", help="show current liquidity", action="store_true")
+    parser.add_argument("-vote", help="set vote for motion or grant proposal", nargs='?', action='append')
+    parser.add_argument("-feed", help="set data feed", action="store_true")
+    args = parser.parse_args()
+
+if not args.unit:
+    node = nu_node.Node()
+    nbt = False
+else: 
+    args.unit[0].lower() == "b"
+    node = nu_node.Node(shares=False)
+    nbt = True
+if args.nbt:
+    node = nu_node.Node(shares=False)
+    nbt = True
+
+if args.version:
+    print(__version__)
+
+if isRunning() == False and not (args.start or args.tor):
+    print('''NuBox is not running. Please start NuBox with "nubox -start" ''')
+    sys.exit()
+
+if isRunning() == False and args.start:
+    print("Starting NuBox...")
+    sh.sudo("systemctl", "start", "nud@{0}.service".format(getpass.getuser()))
+
+if isRunning() == False and args.tor:
+    print("Starting NuBox with Tor onion router as proxy...")
+    sh.sudo("systemctl", "start", "nud-tor@{0}.service".format(getpass.getuser()))
+
+if isRunning() == True and args.start:
+    print("NuBox is already running.")
+
+if isRunning() == True and args.tor:
+    print("Starting NuBox with Tor onion router as proxy...")
+    sh.sudo("systemctl", "start", "nud-tor@{0}.service".format(getpass.getuser()))
+    
+if args.restart:
+    print("Restarting NuBox...")
+    try:
+        if sh.systemctl("is-active", "nud@{0}.service".format(getpass.getuser())) != "active":
+            sh.sudo("systemctl", "restart", "nud@{0}.service".format(getpass.getuser()))
+    except:
+        pass
+    try:    
+        if sh.systemctl("is-active", "nud-tor@{0}.service".format(getpass.getuser())) != "active":
+            sh.sudo("systemctl", "restart", "nud-tor@{0}.service".format(getpass.getuser()))
+    except:
+        pass
+
+if args.stop:
+    print("Stopping NuBox...")
+    try:
+        if sh.systemctl("is-active", "nud@{0}.service".format(getpass.getuser())) != "active":
+            sh.sudo("systemctl", "stop", "nud@{0}.service".format(getpass.getuser()))
+    except:
+        pass
+    try:
+        if sh.systemctl("is-active", "nud-tor@{0}.service".format(getpass.getuser())) != "active":
+            sh.sudo("systemctl", "stop", "nud-tor@{0}.service".format(getpass.getuser()))
+    except:
+        pass
+
+if args.autostart:
+    if args.autostart[0].lower() == "tor":
+        sh.sudo("systemctl", "enable", "nud-tor@{0}.service".format(getpass.getuser()))
+        print("NuBox Tor will now autostart at boot time.")
+    else:
+        sh.sudo("systemctl", "enable", "nud@{0}.service".format(getpass.getuser()))
+        print("NuBox will now autostart at boot time.")
+
+if args.info:
+    print(json.dumps(info(), indent=4))
+
+if args.public:
+    print(json.dumps(info(public=True), indent=4))
+
+if args.stdout:
+    sys.stdout.write(info())
+
+if args.rates:
+    try:
+        print("\nNuShares exchange rates:")
+        print(json.dumps(exchangeRates(), indent=4))
+    except:
+        print("Sorry, remote API could not be reached. Try again later.")
+        pass
+
+if args.mint:
+    mint()
+
+if args.balance:
+    print(json.dumps(balance(), indent=4))
+
+if args.addr:
+    print(json.dumps(addr(), indent=4))
+
+if args.send:
+    print(send(args.send[0], args.send[1]))
+
+if args.onion:
+    try:
+        print(sh.sudo("cat", "/var/lib/tor/nu-service/hostname"))
+    except:
+        pass
+
+if args.gauth:
+    if not args.gauth[0]:
+        print("You must state the argument, 'set'/'true' or 'unset'/'false'.")
+    if args.gauth[0] == ("set" or "true"):
+        gauth_set()
+    if args.gauth[0] == ("unset" or "false"):
+        gauth_unset()
+    if args.gauth[0] not in ("set", "unset", "true", "false", "status"):
+        print("I really don't know what do you want me to do.")
+
+if not any(vars(args).values()) == True:
+    print(json.dumps(info(), indent=4))
+
+## Nu specifics
+
+if args.parkrates:
+    node = nu_node.Node(shares=False)
+    print(json.dumps(node.getparkrates(), indent=4))
+
+if args.motions:
+    print(json.dumps(node.getmotions(), indent=4))
+
+if args.liquidity:
+    node = nu_node.Node(shares=False)
+    print(json.dumps(node.getliquidityinfo(), indent=4))
+
+if args.vote:
+    vote(args.vote[0])
+
+if args.feed:
+    datafeed()

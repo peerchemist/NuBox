@@ -1,0 +1,25 @@
+[Unit]
+Description=NuBits
+After=network.target
+After=graphical.target
+Conflicts=nud@%i.service
+Conflicts=nud-tor@%i.service
+Conflicts=nu-tor@%i.service
+
+[Service]
+User=%i
+Group=users
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+Type=simple
+Restart=on-failure
+RestartSec=15
+ExecStart=/usr/bin/nu
+## security
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

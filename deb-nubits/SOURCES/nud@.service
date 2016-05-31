@@ -1,0 +1,22 @@
+[Unit]
+Description=Nubits daemon
+After=network.target 
+Conflicts=nud-tor@%i.service
+Conflicts=nu@%i.service
+Conflicts=nu-tor@%i.service
+
+[Service]
+User=%i
+Group=users
+Type=simple
+Restart=on-failure
+RestartSec=15
+ExecStart=/usr/bin/nud
+## security
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

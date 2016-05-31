@@ -1,0 +1,15 @@
+Source: ncf
+Section: net
+Priority: optional
+Maintainer: Peerchemist <peerchemist@protonmail.ch>
+Build-Depends: debhelper (>= 9)
+Standards-Version: 3.9.5
+Vcs-Git: git://github.com/peerchemist/NuBox/nubox.git
+Vcs-Browser: https://github.com/peerchemist/NuBox
+
+Package: ncf
+Architecture: all
+Depends: ${misc:Depends}, tor
+Description: NuBox configuration scripts.
+ Collection of scripts which serve as helper scripts for setting up and maintaining underlying Operating System.
+ .

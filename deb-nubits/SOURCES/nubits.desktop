@@ -1,0 +1,10 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=NuBits
+Comment=Official client for Nubits P2P Cryptocurrency
+Exec=nubits-qt %u
+Terminal=false
+Type=Application
+Icon=nubits
+MimeType=x-scheme-handler/nubits;
+Categories=Office;Finance;

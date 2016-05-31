@@ -1,0 +1,20 @@
+--- version.cpp	2016-05-01 11:51:43.143182639 +0000
++++ version_modif.cpp	2016-05-11 11:18:50.939606248 +0000
+@@ -13,7 +13,7 @@
+ const std::string CLIENT_NAME("Siglee");
+ 
+ // Client version number
+-#define CLIENT_VERSION_SUFFIX   "-beta"
++#define CLIENT_VERSION_SUFFIX   "-NuBox"
+ 
+ 
+ // The following part of the code determines the CLIENT_BUILD variable.
+@@ -47,7 +47,7 @@
+     "v" STRINGIFY(maj) "." STRINGIFY(min) "." STRINGIFY(rev) "-g" commit
+ 
+ #define BUILD_DESC_FROM_UNKNOWN(maj,min,rev) \
+-    "v" STRINGIFY(maj) "." STRINGIFY(min) "." STRINGIFY(rev) "-unk"
++    "v" STRINGIFY(maj) "." STRINGIFY(min) "." STRINGIFY(rev)
+ 
+ #ifndef BUILD_DESC
+ #    ifdef GIT_COMMIT_ID

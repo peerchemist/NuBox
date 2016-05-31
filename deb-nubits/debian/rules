@@ -1,0 +1,67 @@
+#!/usr/bin/make -f
+# -*- mode: makefile; coding: utf-8 -*-
+
+#DEB_INSTALL_EXAMPLES_ppcoind += debian/examples/*
+#DEB_INSTALL_MANPAGES_ppcoind += debian/manpages/*
+
+# Hardening
+export DEB_BUILD_HARDENING=1
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all
+CFLAGS=$(shell dpkg-buildflags --get CFLAGS)
+LDFLAGS=$(shell dpkg-buildflags --get LDFLAGS)
+CFLAGS+=$(HARDENING_CFLAGS)
+LDFLAGS+=$(HARDENING_LDFLAGS)
+
+NAME=nu
+DESTDIR=debian/$(NAME)
+PREFIX=/usr
+LIBDIR=$(PREFIX)/lib
+BINDIR=$(PREFIX)/bin/
+DATADIR=$(PREFIX)/share/
+RCDIR=$(LIBDIR)/systemd/system/
+
+%:
+	dh $@
+
+override_dh_auto_build:
+
+	# patches
+	patch share/genbuild.sh < ../SOURCES/genbuild.patch
+	patch src/version.cpp < ../SOURCES/version_id.patch
+
+	$(MAKE) -C src/ -f makefile.unix $(NAME)d USE_UPNP=1 USE_SSL=1
+	$(MAKE)
+
+override_dh_auto_clean:
+	if [ -f Makefile ]; then $(MAKE) clean; else rm -rf build/; rm -f $(NAME); fi
+	cd src; $(MAKE) -f makefile.unix clean
+
+override_dh_auto_configure:
+	qmake $(NAME).pro USE_QRCODE=1 USE_DBUS=1 USE_SSL=1
+
+override_dh_auto_install:
+
+	mkdir -p "$(DESTDIR)$(BINDIR)"
+	install -m 0755 $(NAME) "$(DESTDIR)$(BINDIR)"
+	install -m 0755 src/$(NAME)d "$(DESTDIR)$(BINDIR)"
+
+	mkdir -p "$(DESTDIR)$(RCDIR)"
+	install -m 644 "../SOURCES/$(NAME)d@.service" "$(DESTDIR)$(RCDIR)"
+	install -m 644 "../SOURCES/$(NAME)d-tor@.service" "$(DESTDIR)$(RCDIR)"
+	install -m 644 "../SOURCES/$(NAME)@.service" "$(DESTDIR)$(RCDIR)"
+	install -m 644 "../SOURCES/$(NAME)-tor@.service" "$(DESTDIR)$(RCDIR)"
+	mkdir -p "$(DESTDIR)$(DATADIR)/applications"
+	install -m 644 "../SOURCES/$(NAME)bits.desktop" "$(DESTDIR)$(DATADIR)/applications"
+	mkdir -p "$(DESTDIR)$(DATADIR)/pixmaps"
+	install -m 644 share/pixmaps/$(NAME).ico "$(DESTDIR)$(DATADIR)/pixmaps/"
+	install -m 644 share/pixmaps/$(NAME)32.xpm "$(DESTDIR)$(DATADIR)/pixmaps/"
+	install -m 644 share/pixmaps/$(NAME)80.xpm "$(DESTDIR)$(DATADIR)/pixmaps/"
+
+#override_dh_auto_test:
+#	cd src; $(MAKE) -f makefile.unix test_{$NAME}
+#	src/test_{$NAME}
+
+.PHONY: override_dh_strip
+override_dh_strip:
+	dh_strip ${NAME}
+	dh_strip src/${NAME}d

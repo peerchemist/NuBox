@@ -1,0 +1,26 @@
+[Unit]
+Description=Nu daemon - tor
+After=network.target
+Wants=tor.service
+Conflicts=nud@%i.service
+Conflicts=nu@%i.service
+Conflicts=nu-tor@%i.service
+
+[Service]
+User=%i
+Group=users
+PermissionsStartOnly=true
+Type=simple
+Restart=on-failure
+RestartSec=15
+ExecStartPre=/bin/bash -c "/usr/lib/ncf/set_tor"
+ExecStartPre=/bin/bash -c "/bin/systemctl set-environment HOSTNAME=$(cat /var/lib/tor/nu-service/hostname)"
+ExecStart=/usr/bin/nud -bind=127.0.0.1 -proxy=127.0.0.1:9050 -listen -externalip=${HOSTNAME}
+## security
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
